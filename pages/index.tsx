@@ -282,30 +282,25 @@ export default function Page({
                         <label>
                             Recipient name:
                             <input
-                                name="to_name"
                                 type="text"
                                 defaultValue={existingConfig?.to_name}
-                                ref={register}
-                                required
+                                {...register('to_name', { required: true })}
                             ></input>
                         </label>
                         <label>
                             Recipient email:
                             <input
-                                name="to_email"
                                 type="email"
                                 defaultValue={existingConfig?.to_email}
-                                ref={register}
-                                required
+                                {...register('to_email', { required: true })}
                             ></input>
                         </label>
                         {process.env.NODE_ENV !== 'production' && (
                             <label>
                                 Send test email:
                                 <input
-                                    name="send_test_email"
                                     type="checkbox"
-                                    ref={register}
+                                    {...register('send_test_email', { required: true })}
                                 />
                             </label>
                         )}
@@ -314,8 +309,8 @@ export default function Page({
                             name="playlist_id"
                             control={control}
                             defaultValue={existingConfig?.playlist_id}
-                            required
-                            render={({ name, onChange, value }) => (
+                            rules={{ required: true }}
+                            render={({ field: { onChange, value, name } }) => (
                                 <PlaylistSelect
                                     name={name}
                                     value={value}

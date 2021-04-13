@@ -173,19 +173,37 @@ const FormActions = styled.div`
     }
 `;
 
-const PreviewZone = styled.div`
+const PreviewZonePlaceholder = styled.div`
+    display: flex;
+    flex-shrink: 0;
+    box-sizing: content-box;
+    border: solid 1px transparent;
+    width: 700px;
+`;
+
+const PreviewZoneContent = styled.div`
+    position: fixed;
+    bottom: 0;
+    right: 0;
+    border: solid 1px black;
+    width: 700px;
+    height: calc(100vh - 30px - 10px - 2px);
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
-    box-sizing: content-box;
-    border: solid 1px black;
+    border-radius: 8px;
     padding: 5px;
-    height: calc(100vh - 30px - 10px - 2px);
-    width: 700px;
     overflow-x: hidden;
     overflow-y: scroll;
-    border-radius: 8px;
 `;
+
+const PreviewZone = ({ children }) => {
+    return (
+        <PreviewZonePlaceholder>
+            <PreviewZoneContent>{children}</PreviewZoneContent>
+        </PreviewZonePlaceholder>
+    );
+};
 
 export default function Page({
     isLoggedIn,
@@ -203,7 +221,16 @@ export default function Page({
         toEmail: string;
         toName: string;
     }>();
-    const { register, handleSubmit, control } = useForm();
+
+    const { register, handleSubmit, control, formState } = useForm({
+        defaultValues: {
+            to_name: existingConfig?.to_name,
+            to_email: existingConfig?.to_email,
+            playlist_id: existingConfig?.playlist_id,
+            send_test_email: false,
+        },
+    });
+    const { isDirty } = formState;
 
     if (!isLoggedIn) {
         return (
@@ -239,7 +266,7 @@ export default function Page({
     if (previewData) {
         previewZoneContent = (
             <>
-                <h2>Next Email Preview:</h2>
+                <h2>Email Preview:</h2>
                 <p>
                     Subject: <code>{previewData.subject}</code>
                 </p>
@@ -283,7 +310,6 @@ export default function Page({
                             Recipient name:
                             <input
                                 type="text"
-                                defaultValue={existingConfig?.to_name}
                                 {...register('to_name', { required: true })}
                             ></input>
                         </label>
@@ -291,24 +317,19 @@ export default function Page({
                             Recipient email:
                             <input
                                 type="email"
-                                defaultValue={existingConfig?.to_email}
                                 {...register('to_email', { required: true })}
                             ></input>
                         </label>
                         {process.env.NODE_ENV !== 'production' && (
                             <label>
                                 Send test email:
-                                <input
-                                    type="checkbox"
-                                    {...register('send_test_email', { required: true })}
-                                />
+                                <input type="checkbox" {...register('send_test_email')} />
                             </label>
                         )}
                         <label>Pick a a playlist where emails are sent for:</label>
                         <Controller
                             name="playlist_id"
                             control={control}
-                            defaultValue={existingConfig?.playlist_id}
                             rules={{ required: true }}
                             render={({ field: { onChange, value, name } }) => (
                                 <PlaylistSelect
@@ -320,7 +341,9 @@ export default function Page({
                             )}
                         />
                         <FormActions>
-                            <button type="submit">Save {'&'} Preview</button>
+                            <button type="submit">
+                                {isDirty ? 'Save & Preview' : 'Preview'}
+                            </button>
                         </FormActions>
                     </form>
                 </FormZone>

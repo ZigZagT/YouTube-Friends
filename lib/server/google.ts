@@ -123,10 +123,10 @@ export async function setYouTubeMailSettingsOfUserId(
     youTubeMailSettings: YouTubeMailSettings,
 ) {
     const key = `youTubeMailSettingsOfUserId:${userId}`;
-    const oldValue = await getYouTubeMailSettingsOfUserId(userId);
+    let oldValue = await getYouTubeMailSettingsOfUserId(userId);
     if (oldValue && oldValue.playlist_id !== youTubeMailSettings.playlist_id) {
-        delete oldValue.etag;
-        delete oldValue.lastProcessedPublishDate;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        oldValue = {} as any;
     }
     const newValue = {
         ...oldValue,
@@ -494,6 +494,8 @@ async function getPlaylistItems(
         break;
     }
 
+    playlistItems.reverse();
+
     return {
         etag: newEtag,
         playlistItems,
@@ -626,8 +628,8 @@ export async function sendPlaylistEmailUpdate(
 
     let previewText =
         playlistItems.length > 1
-            ? `Check out these ${playlistItems.length} videos! `
-            : 'Check out this video! ';
+            ? `Shared ${playlistItems.length} videos to you! `
+            : 'Shared a video to you! ';
     previewText += playlistItems.map((item) => item.snippet.title).join('; ');
     const subject = getSafeSubject(previewText);
 

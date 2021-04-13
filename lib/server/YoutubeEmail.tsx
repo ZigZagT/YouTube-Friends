@@ -54,8 +54,6 @@ function PlaylistItemDetailsCard({
                 <MjmlColumn>
                     <MjmlText>
                         <h2>Description:</h2>
-                    </MjmlText>
-                    <MjmlText>
                         <pre>{videoDescription}</pre>
                     </MjmlText>
                 </MjmlColumn>

@@ -36,11 +36,11 @@ async function start() {
     if (!IS_STARTED) {
         debug('launching scheduler');
         IS_STARTED = true;
-        taskHandles.push(0);
     }
-    taskHandles.pop();
     while (taskHandles.length) {
-        debug('found previous running timeout tasks, cleaning them up...');
+        if (taskHandles.length > 1) {
+            throw new Error('found previous running timeout tasks');
+        }
         clearTimeout(taskHandles.pop());
     }
     taskCount += 1;

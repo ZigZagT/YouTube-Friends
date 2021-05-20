@@ -344,6 +344,21 @@ export default function Page({
                             <button type="submit">
                                 {isDirty ? 'Save & Preview' : 'Preview'}
                             </button>
+                            {process.env.NODE_ENV !== 'production' && (
+                                <button
+                                    onClick={async () => {
+                                        const response = await fetchApi(
+                                            '/api/task/schedule',
+                                        );
+                                        const { schedulerStatus } = await response.json();
+                                        window.alert(
+                                            JSON.stringify(schedulerStatus, null, 2),
+                                        );
+                                    }}
+                                >
+                                    {'DEV ONLY: trigger scheduler / check status'}
+                                </button>
+                            )}
                         </FormActions>
                     </form>
                 </FormZone>

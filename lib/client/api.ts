@@ -1,6 +1,14 @@
-import fetch from 'isomorphic-unfetch';
 import _ from 'lodash';
 import { NextPageContext } from 'next';
+
+export class FetchError extends Error {
+    response: Response;
+
+    constructor(response: Response) {
+        super(`${response.status} ${response.statusText}`);
+        this.response = response;
+    }
+}
 
 const getApiFullPath = (path: string, req?: NextPageContext['req'] | null): string => {
     if (path.startsWith('http')) {
@@ -34,22 +42,34 @@ const getApiFullPath = (path: string, req?: NextPageContext['req'] | null): stri
 
 export async function fetchApi(
     path: string,
-    req?: NextPageContext['req'] | null,
-    res?: NextPageContext['res'] | null,
-    init?: RequestInit | null,
-    jsonData?: unknown,
+    {
+        req,
+        res,
+        data,
+        init,
+        statusCodeHandlers = {
+            200: () => null,
+            204: () => null,
+        },
+    }: {
+        req?: NextPageContext['req'] | null;
+        res?: NextPageContext['res'] | null;
+        data?: unknown;
+        init?: RequestInit | null;
+        statusCodeHandlers?: { [statusCode: number]: (res: Response) => Promise<void> };
+    } = {},
 ): Promise<Response> {
     const fullPath = getApiFullPath(path, req);
     const fetchResponse = await fetch(
         fullPath,
         _.pickBy({
-            method: jsonData == null ? 'GET' : 'POST',
+            method: data == null ? 'GET' : 'POST',
             redirect: 'follow',
             credentials: 'include',
-            body: jsonData == null ? undefined : JSON.stringify(jsonData),
+            body: data == null ? undefined : JSON.stringify(data),
             ...init,
             headers: _.pickBy({
-                'Content-Type': jsonData == null ? undefined : 'application/json',
+                'Content-Type': data == null ? undefined : 'application/json',
                 cookie: req?.headers['cookie'],
                 ...init?.headers,
             }),
@@ -60,6 +80,11 @@ export async function fetchApi(
         if (upstreamSetCookies) {
             res.setHeader('set-cookie', upstreamSetCookies);
         }
+    }
+    if (statusCodeHandlers[fetchResponse.status]) {
+        await statusCodeHandlers[fetchResponse.status](fetchResponse);
+    } else {
+        throw new FetchError(fetchResponse);
     }
     return fetchResponse;
 }

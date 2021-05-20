@@ -9,7 +9,7 @@ export default async (req: NextApiRequest, res: NextApiResponse) => {
 
     await redis.set('heartbeat', redisHeartbeat);
 
-    const taskScheduleRes = await fetchApi('/api/task/schedule', req, res);
+    const taskScheduleRes = await fetchApi('/api/task/schedule', { req, res });
     const { schedulerStatus } = await taskScheduleRes.json();
 
     res.json({

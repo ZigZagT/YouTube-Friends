@@ -18,7 +18,7 @@ type Props = {
 };
 
 async function logout(req?, res?) {
-    await fetchApi('/api/logout', req, res);
+    await fetchApi('/api/logout', { req, res });
     !req && !res && window.location.reload();
 }
 
@@ -246,7 +246,7 @@ export default function Page({
     async function onSubmit(data) {
         window.scrollTo(0, 0);
         setProgressText('Setting up...');
-        const res = await fetchApi('/api/playlists_setup', null, null, null, data);
+        const res = await fetchApi('/api/playlists_setup', { data });
         if (res.status === 200) {
             const { email } = await res.json();
             if (email) {
@@ -354,30 +354,37 @@ export default function Page({
 }
 
 Page.getInitialProps = async ({ req, res }: NextPageContext) => {
-    const playlistsDataRes = await fetchApi('/api/playlists_setup', req, res);
-    debug(
-        'response from /api/playlists_setup %d - %s',
-        playlistsDataRes.status,
-        playlistsDataRes.statusText,
-    );
     let isLoggedIn = false;
     let authUrl: string;
     let playlists: youtube_v3.Schema$Playlist[];
     let profile: UserProfile;
     let existingConfig: YouTubeMailSettings;
 
-    if (playlistsDataRes.status === 401) {
-        authUrl = (await playlistsDataRes.json()).authUrl;
-    } else if (playlistsDataRes.status == 200) {
-        const data = await playlistsDataRes.json();
-        debug('data from /api/playlists_setup %O', data);
-        isLoggedIn = true;
-        playlists = data.playlists;
-        profile = data.profile;
-        existingConfig = data.config;
-    } else {
-        await logout(req, res);
-    }
+    const playlistsDataRes = await fetchApi('/api/playlists_setup', {
+        req,
+        res,
+        statusCodeHandlers: {
+            200: async (response) => {
+                const data = await response.json();
+                debug('data from /api/playlists_setup %O', data);
+                isLoggedIn = true;
+                playlists = data.playlists;
+                profile = data.profile;
+                existingConfig = data.config;
+            },
+            401: async (response) => {
+                authUrl = (await response.json()).authUrl;
+            },
+            // default: async () => {
+            //     await logout(req, res);
+            // },
+        },
+    });
+    debug(
+        'response from /api/playlists_setup %d - %s',
+        playlistsDataRes.status,
+        playlistsDataRes.statusText,
+    );
     return {
         isLoggedIn,
         authUrl,

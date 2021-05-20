@@ -1,4 +1,7 @@
 module.exports = {
+    future: {
+        webpack5: true,
+    },
     serverRuntimeConfig: {
         SENDGRID_TOKEN: process.env.SENDGRID_TOKEN,
         GOOGLE_OAUTH_CLIENT_SECRET: process.env.GOOGLE_OAUTH_CLIENT_SECRET,

@@ -94,6 +94,7 @@ async function setCachedProfileOfUserId(userId: string, profile: UserProfile) {
 }
 
 export type YouTubeMailSettings = {
+    serial: number;
     to_name: string;
     to_email: string;
     playlist_id: string;
@@ -103,40 +104,69 @@ export type YouTubeMailSettings = {
 
 export async function getYouTubeMailSettingsOfUserId(
     userId: string,
-): Promise<YouTubeMailSettings> {
+): Promise<YouTubeMailSettings[]> {
     const key = `youTubeMailSettingsOfUserId:${userId}`;
     const resp = await redis.get(key);
     if (resp) {
         await redis.expire(key, USER_DATA_EX);
-        const data = JSON.parse(resp);
-        return {
-            ...data,
-            // fuck javascript: new Date(undefined) returns a invalid value, while new Date(null) returns epoch
-            lastProcessedPublishDate: new Date(data.lastProcessedPublishDate || null),
-        };
+        let data: YouTubeMailSettings[] = JSON.parse(resp);
+
+        //** start backward compatibility handling */
+        if (!Array.isArray(data)) {
+            // @ts-expect-error backward compatibility
+            data = [{ serial: 0, ...data }];
+            await redis.set(key, JSON.stringify(data), 'EX', USER_DATA_EX);
+        }
+        //** end backward compatibility handling */
+
+        return data.map((datum) => ({
+            ...datum,
+            lastProcessedPublishDate: datum.lastProcessedPublishDate
+                ? new Date(datum.lastProcessedPublishDate)
+                : null,
+        }));
     }
     return null;
 }
 
 export async function setYouTubeMailSettingsOfUserId(
     userId: string,
-    youTubeMailSettings: YouTubeMailSettings,
+    youTubeMailSettings: YouTubeMailSettings[],
 ) {
     const key = `youTubeMailSettingsOfUserId:${userId}`;
-    let oldValue = await getYouTubeMailSettingsOfUserId(userId);
-    if (oldValue && oldValue.playlist_id !== youTubeMailSettings.playlist_id) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        oldValue = {} as any;
-    }
-    const newValue = {
-        ...oldValue,
-        ...youTubeMailSettings,
-    };
-    if (newValue.lastProcessedPublishDate instanceof Date) {
-        // @ts-expect-error force date to be persisted as number
-        newValue.lastProcessedPublishDate = newValue.lastProcessedPublishDate.getTime();
-    }
-    return await redis.set(key, JSON.stringify(newValue), 'EX', USER_DATA_EX);
+    const oldSettings = (await getYouTubeMailSettingsOfUserId(userId)) || [];
+    const oldSettingsSerialMapping = Object.fromEntries(
+        oldSettings.map((settings) => [settings.serial, settings]),
+    );
+    let maxSerial = Math.max(-1, ...oldSettings.map((settings) => settings.serial));
+
+    const newSettings = youTubeMailSettings.map((settings) => {
+        let serial = settings.serial;
+        if (serial == null) {
+            maxSerial += 1;
+            serial = maxSerial;
+        }
+
+        let lastProcessedPublishDate = settings.lastProcessedPublishDate;
+        if (
+            lastProcessedPublishDate == null &&
+            oldSettingsSerialMapping[serial]?.playlist_id === settings.playlist_id
+        ) {
+            lastProcessedPublishDate =
+                oldSettingsSerialMapping[serial].lastProcessedPublishDate;
+        }
+        if (lastProcessedPublishDate instanceof Date) {
+            // @ts-expect-error force date to be persisted as number
+            lastProcessedPublishDate = lastProcessedPublishDate.getTime();
+        }
+
+        return {
+            ...settings,
+            serial,
+            lastProcessedPublishDate,
+        };
+    });
+    return await redis.set(key, JSON.stringify(newSettings), 'EX', USER_DATA_EX);
 }
 
 export async function maintainSavedStates(
@@ -149,12 +179,12 @@ export async function maintainSavedStates(
 ) {
     const keys: { [key: string]: number } = {};
     if (sessionToken) {
-        if (!keepSessionAlive) {
+        if (!keepSessionAlive && action === 'delete') {
             keys[`userIdOfSessionToken:${sessionToken}`] = SESSION_EX;
         }
     }
     if (userId) {
-        if (!keepSessionAlive) {
+        if (!keepSessionAlive && action === 'delete') {
             keys[`oauthCredentialsOfUserId:${userId}`] = USER_DATA_EX;
         }
         keys[`youTubeMailSettingsOfUserId:${userId}`] = USER_DATA_EX;
@@ -573,39 +603,63 @@ export async function sendGmail(
     return response;
 }
 
+function getSafeSubject(subject: string): string {
+    let ret = subject;
+    const hardLimit = 128;
+    if (subject.length > hardLimit) {
+        ret = subject.substr(0, hardLimit - 3) + '...';
+    }
+    return ret;
+}
+
+export type EmailPreview = {
+    content: string;
+    subject: string;
+    fromName: string;
+    fromEmail: string;
+    toEmail: string;
+    toName: string;
+};
+
 export async function sendPlaylistEmailUpdate(
     userId: string,
     { updateCursor = true, sendEmail = true } = {},
-) {
+): Promise<{
+    [serial: number]: EmailPreview;
+}> {
     debug(
-        'sendPlaylistEmailUpdate(%s, { updateCursor = %s, sendEmail = %s})',
+        'sendPlaylistEmailUpdate(%s, { updateCursor = %s, sendEmail = %s })',
         userId,
         updateCursor,
         sendEmail,
     );
     const authContext = await getUserAuthContext(userId);
     const userProfile = await authContext.getProfile();
-    const emailSettings = await getYouTubeMailSettingsOfUserId(userId);
+    const allEmailSettings = await getYouTubeMailSettingsOfUserId(userId);
+    const updatedEmailSettings = {};
+    const emails: {
+        [serial: number]: EmailPreview;
+    } = {};
 
-    if (!emailSettings) {
+    if (!allEmailSettings) {
         return null;
     }
 
-    const { etag, playlistItems } = await getPlaylistItems(
-        emailSettings.playlist_id,
-        emailSettings.lastProcessedPublishDate,
-        authContext.auth,
-        emailSettings.etag,
-    );
+    for (const emailSettings of allEmailSettings) {
+        const { etag, playlistItems } = await getPlaylistItems(
+            emailSettings.playlist_id,
+            emailSettings.lastProcessedPublishDate,
+            authContext.auth,
+            emailSettings.etag,
+        );
 
-    debug('received %d items from sendPlaylistEmailUpdate()', playlistItems.length);
+        debug('received %d items from sendPlaylistEmailUpdate()', playlistItems.length);
 
-    if (!playlistItems.length) {
-        return null;
-    }
+        if (!playlistItems.length) {
+            continue;
+        }
 
-    if (updateCursor) {
-        await setYouTubeMailSettingsOfUserId(userId, {
+        updatedEmailSettings[emailSettings.serial] = {
             ...emailSettings,
             etag,
             lastProcessedPublishDate: new Date(
@@ -614,50 +668,54 @@ export async function sendPlaylistEmailUpdate(
                     ...playlistItems.map((item) => new Date(item.snippet.publishedAt)),
                 ),
             ),
-        });
+        };
+
+        let previewText =
+            playlistItems.length > 1
+                ? `Shared ${playlistItems.length} videos to you! `
+                : 'Shared a video to you! ';
+        previewText += playlistItems.map((item) => item.snippet.title).join('; ');
+        const subject = getSafeSubject(previewText);
+
+        const emailContent = buildEmail(subject, previewText, playlistItems);
+
+        emails[emailSettings.serial] = {
+            content: emailContent,
+            subject,
+            fromName: userProfile.name,
+            fromEmail: userProfile.email,
+            toEmail: emailSettings.to_email,
+            toName: emailSettings.to_name,
+        };
     }
-
-    function getSafeSubject(subject: string): string {
-        let ret = subject;
-        const hardLimit = 128;
-        if (subject.length > hardLimit) {
-            ret = subject.substr(0, hardLimit - 3) + '...';
-        }
-        return ret;
-    }
-
-    let previewText =
-        playlistItems.length > 1
-            ? `Shared ${playlistItems.length} videos to you! `
-            : 'Shared a video to you! ';
-    previewText += playlistItems.map((item) => item.snippet.title).join('; ');
-    const subject = getSafeSubject(previewText);
-
-    const emailContent = buildEmail(subject, previewText, playlistItems);
 
     if (sendEmail) {
-        const resp = await sendGmail(
-            {
-                fromName: userProfile.name,
-                fromEmail: userProfile.email,
-                toEmail: emailSettings.to_email,
-                toName: emailSettings.to_name,
-                subject,
-                htmlContent: emailContent,
-            },
-            authContext.auth,
-        );
-        debug('email sent %O', resp);
+        for (const email of Object.values(emails)) {
+            const resp = await sendGmail(
+                {
+                    fromName: email.fromName,
+                    fromEmail: email.fromEmail,
+                    toEmail: email.toEmail,
+                    toName: email.toName,
+                    subject: email.subject,
+                    htmlContent: email.content,
+                },
+                authContext.auth,
+            );
+            debug('email sent %O', resp);
+        }
     } else {
         debug('send email skipped due to user config');
     }
 
-    return {
-        emailContent,
-        subject,
-        fromName: userProfile.name,
-        fromEmail: userProfile.email,
-        toEmail: emailSettings.to_email,
-        toName: emailSettings.to_name,
-    };
+    if (updateCursor) {
+        await setYouTubeMailSettingsOfUserId(
+            userId,
+            allEmailSettings.map(
+                (settings) => updatedEmailSettings[settings.serial] || settings,
+            ),
+        );
+    }
+
+    return emails;
 }

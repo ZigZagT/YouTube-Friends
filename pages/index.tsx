@@ -6,7 +6,7 @@ import React from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import getDebug from 'debug';
 import Head from 'next/head';
-import { UserProfile, YouTubeMailSettings } from 'lib/server/google';
+import { UserProfile, YouTubeMailSettings, EmailPreview } from 'lib/server/google';
 const debug = getDebug('YTF:pages/index.tsx');
 
 type Props = {
@@ -14,7 +14,10 @@ type Props = {
     authUrl: string;
     playlists: youtube_v3.Schema$Playlist[];
     profile: UserProfile;
-    existingConfig: YouTubeMailSettings;
+    initialSettings: YouTubeMailSettings[];
+    emailPreviews: {
+        [serial: number]: EmailPreview;
+    };
 };
 
 async function logout(req?, res?) {
@@ -150,6 +153,7 @@ const HeaderStyle = styled.div`
 
     & > * {
         max-height: 30px;
+        margin-left: 10px;
         margin-right: 10px;
     }
 `;
@@ -160,8 +164,27 @@ const MainZone = styled.div`
     justify-content: space-between;
 `;
 
+const SideBarZone = styled.div`
+    display: flex;
+    background-color: #eee;
+    padding: 0 5px;
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-direction: column;
+    align-items: center;
+    width: 50px;
+
+    & > * {
+        display: flex;
+        width: 100%;
+        justify-content: center;
+        margin-top: 5px;
+    }
+`;
+
 const FormZone = styled.div`
     display: flex;
+    padding: 0 5px;
 `;
 
 const FormActions = styled.div`
@@ -210,27 +233,33 @@ export default function Page({
     authUrl,
     playlists,
     profile,
-    existingConfig,
+    initialSettings,
+    emailPreviews: initialEmailPreviews,
 }: Props) {
     const [progressText, setProgressText] = React.useState<string>();
-    const [previewData, setPreviewData] = React.useState<{
-        emailContent: string;
-        subject: string;
-        fromName: string;
-        fromEmail: string;
-        toEmail: string;
-        toName: string;
-    }>();
+    const [previewData, setPreviewData] =
+        React.useState<{
+            [serial: number]: EmailPreview;
+        }>(initialEmailPreviews);
+    const [currentSettings, setCurrentSettings] = React.useState(initialSettings);
+    const [hasPendingDeletion, setHasPendingDeletion] = React.useState(false);
+    const [activeForm, setActiveForm] = React.useState(0);
+    const currentActiveFormData = currentSettings[activeForm];
+    const currentActiveFormSerial = currentActiveFormData?.serial;
+    const currentActiveFormPreviewData = previewData[currentActiveFormSerial];
 
-    const { register, handleSubmit, control, formState } = useForm({
-        defaultValues: {
-            to_name: existingConfig?.to_name,
-            to_email: existingConfig?.to_email,
-            playlist_id: existingConfig?.playlist_id,
-            send_test_email: false,
-        },
-    });
+    const { register, handleSubmit, control, formState, reset } = useForm();
     const { isDirty } = formState;
+
+    React.useEffect(() => {
+        reset({
+            serial: currentActiveFormData.serial,
+            to_email: currentActiveFormData.to_email,
+            to_name: currentActiveFormData.to_name,
+            playlist_id: currentActiveFormData.playlist_id,
+            send_test_email: false,
+        });
+    }, [currentActiveFormData]);
 
     if (!isLoggedIn) {
         return (
@@ -243,44 +272,67 @@ export default function Page({
         );
     }
 
-    async function onSubmit(data) {
+    async function onSubmit(currentFormSettings) {
         window.scrollTo(0, 0);
-        setProgressText('Setting up...');
-        const res = await fetchApi('/api/playlists_setup', { data });
-        if (res.status === 200) {
-            const { email } = await res.json();
-            if (email) {
-                setPreviewData(email);
-            } else {
-                setPreviewData(null);
-                setProgressText('No new item in the playlist, nothing to be sent.');
-            }
-        } else {
-            setProgressText(`Oops! something went wrong. (${res.status})`);
+        setProgressText('Setting up... please wait...');
+        const newSettings = currentSettings.map((settings) => ({
+            ...settings,
+            lastProcessedPublishDate: undefined,
+        }));
+        newSettings[activeForm] = currentFormSettings;
+        try {
+            await fetchApi('/api/playlists_setup', {
+                data: newSettings,
+                statusCodeHandlers: {
+                    200: async (res) => {
+                        const { updatedSettings, emailPreviews } = await res.json();
+                        setPreviewData(emailPreviews);
+                        setCurrentSettings(updatedSettings);
+                        setProgressText(null);
+                        setHasPendingDeletion(false);
+                    },
+                    400: async (res) => {
+                        const { status, message } = await res.json();
+                        setProgressText(`${status} ${message.toString()}`);
+                    },
+                },
+            });
+        } catch (e) {
+            setProgressText('Oops! something went wrong.');
+            throw e;
         }
     }
 
     let previewZoneContent = (
         <p>Save settings and preview the see what the next email will be look like.</p>
     );
-    if (previewData) {
+
+    if (currentActiveFormPreviewData) {
         previewZoneContent = (
             <>
-                <h2>Email Preview:</h2>
+                <h2>Your next email will look like this:</h2>
                 <p>
-                    Subject: <code>{previewData.subject}</code>
+                    Subject: <code>{currentActiveFormPreviewData.subject}</code>
                 </p>
                 <p>
                     From:{' '}
-                    <code>{`${previewData.fromName} <${previewData.fromEmail}>`}</code>
+                    <code>{`${currentActiveFormPreviewData.fromName} <${currentActiveFormPreviewData.fromEmail}>`}</code>
                 </p>
                 <p>
-                    To: <code>{`${previewData.toName} <${previewData.toEmail}>`}</code>
+                    To:{' '}
+                    <code>{`${currentActiveFormPreviewData.toName} <${currentActiveFormPreviewData.toEmail}>`}</code>
                 </p>
-                <div dangerouslySetInnerHTML={{ __html: previewData.emailContent }}></div>
+                <div
+                    dangerouslySetInnerHTML={{
+                        __html: currentActiveFormPreviewData.content,
+                    }}
+                ></div>
             </>
         );
-    } else if (progressText) {
+    } else if (currentActiveFormSerial != null) {
+        previewZoneContent = <p>No new item in the playlist, nothing to be sent.</p>;
+    }
+    if (progressText) {
         previewZoneContent = <p>{progressText}</p>;
     }
 
@@ -290,6 +342,17 @@ export default function Page({
                 <title>YouTube Friends</title>
             </Head>
             <HeaderStyle>
+                {isDirty || currentActiveFormSerial == null || hasPendingDeletion ? (
+                    <p
+                        style={{
+                            color: 'red',
+                            flexGrow: 1,
+                            flexShrink: 1,
+                        }}
+                    >
+                        <i>You have unsaved change</i>
+                    </p>
+                ) : null}
                 <p>Logged in as: </p>
                 <img src={profile.picture} />
                 <code>
@@ -304,20 +367,77 @@ export default function Page({
                 </button>
             </HeaderStyle>
             <MainZone>
+                <SideBarZone>
+                    {currentSettings.map((data, i) => {
+                        return (
+                            <label key={i}>
+                                {i + 1}
+                                <input
+                                    type="radio"
+                                    checked={i === activeForm}
+                                    disabled={isDirty || currentActiveFormSerial == null}
+                                    onChange={() => setActiveForm(i)}
+                                />
+                            </label>
+                        );
+                    })}
+                    {currentSettings.length < 3 &&
+                    currentActiveFormSerial != null &&
+                    !isDirty ? (
+                        <button
+                            onClick={() => {
+                                setActiveForm(currentSettings.length);
+                                // @ts-expect-error no harm to initialize as empty, form validation will ensure its content
+                                setCurrentSettings([...currentSettings, {}]);
+                            }}
+                        >
+                            Add
+                        </button>
+                    ) : null}
+                    {currentSettings.length > 1 ? (
+                        <button
+                            onClick={() => {
+                                setCurrentSettings(
+                                    currentSettings.filter(
+                                        (data) => data !== currentActiveFormData,
+                                    ),
+                                );
+                                setActiveForm(Math.max(0, activeForm - 1));
+                                if (currentActiveFormSerial != null) {
+                                    setHasPendingDeletion(true);
+                                }
+                            }}
+                        >
+                            Delete
+                        </button>
+                    ) : null}
+                </SideBarZone>
                 <FormZone>
                     <form onSubmit={handleSubmit(onSubmit)}>
+                        <h1>
+                            {currentActiveFormSerial == null
+                                ? 'Create New Subscription'
+                                : `Subscription #${currentActiveFormSerial}${
+                                      isDirty ? ' (Changed)' : ''
+                                  }`}
+                        </h1>
+                        {/* <input type="hidden" {...register('serial')}></input> */}
                         <label>
                             Recipient name:
                             <input
                                 type="text"
-                                {...register('to_name', { required: true })}
+                                {...register('to_name', {
+                                    required: true,
+                                })}
                             ></input>
                         </label>
                         <label>
                             Recipient email:
                             <input
                                 type="email"
-                                {...register('to_email', { required: true })}
+                                {...register('to_email', {
+                                    required: true,
+                                })}
                             ></input>
                         </label>
                         {process.env.NODE_ENV !== 'production' && (
@@ -341,9 +461,7 @@ export default function Page({
                             )}
                         />
                         <FormActions>
-                            <button type="submit">
-                                {isDirty ? 'Save & Preview' : 'Preview'}
-                            </button>
+                            <button type="submit">Save</button>
                             {process.env.NODE_ENV !== 'production' && (
                                 <button
                                     onClick={async () => {
@@ -373,7 +491,10 @@ Page.getInitialProps = async ({ req, res }: NextPageContext) => {
     let authUrl: string;
     let playlists: youtube_v3.Schema$Playlist[];
     let profile: UserProfile;
-    let existingConfig: YouTubeMailSettings;
+    let initialSettings: YouTubeMailSettings[];
+    let emailPreviews: {
+        [serial: number]: EmailPreview;
+    } = {};
 
     const playlistsDataRes = await fetchApi('/api/playlists_setup', {
         req,
@@ -385,14 +506,12 @@ Page.getInitialProps = async ({ req, res }: NextPageContext) => {
                 isLoggedIn = true;
                 playlists = data.playlists;
                 profile = data.profile;
-                existingConfig = data.config;
+                initialSettings = data.settings;
+                emailPreviews = data.emailPreviews;
             },
             401: async (response) => {
                 authUrl = (await response.json()).authUrl;
             },
-            // default: async () => {
-            //     await logout(req, res);
-            // },
         },
     });
     debug(
@@ -405,6 +524,7 @@ Page.getInitialProps = async ({ req, res }: NextPageContext) => {
         authUrl,
         playlists,
         profile,
-        existingConfig,
+        initialSettings,
+        emailPreviews,
     };
 };

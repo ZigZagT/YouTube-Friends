@@ -1,30 +1,18 @@
-import * as Sentry from '@sentry/node';
 import { NextApiRequest, NextApiResponse } from 'next';
-import getConfig from 'next/config';
+import { withSentry } from '@sentry/nextjs';
 
 export type APIType = (req: NextApiRequest, res: NextApiResponse) => Promise<void>;
 
-const {
-    publicRuntimeConfig: { SENTRY_DSN },
-} = getConfig();
-
-if (SENTRY_DSN) {
-    Sentry.init({
-        enabled: process.env.NODE_ENV === 'production',
-        dsn: SENTRY_DSN,
-    });
-}
-
 const makeApi = (api: APIType): APIType => {
+    const sentryWrappedApi = withSentry(api);
     return async (req, res) => {
         try {
-            await api(req, res);
+            await sentryWrappedApi(req, res);
             if (!res.writableEnded) {
                 res.end();
             }
         } catch (e) {
             console.error('api error: ', e);
-            Sentry.captureException(e);
             if (!res.headersSent) {
                 res.status(500);
             }

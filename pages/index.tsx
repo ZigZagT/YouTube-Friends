@@ -237,11 +237,10 @@ export default function Page({
     emailPreviews: initialEmailPreviews,
 }: Props) {
     const [progressText, setProgressText] = React.useState<string>();
-    const [previewData, setPreviewData] =
-        React.useState<{
-            [serial: number]: EmailPreview;
-        }>(initialEmailPreviews);
-    const [currentSettings, setCurrentSettings] = React.useState(initialSettings);
+    const [previewData, setPreviewData] = React.useState<{
+        [serial: number]: EmailPreview;
+    }>(initialEmailPreviews || {});
+    const [currentSettings, setCurrentSettings] = React.useState(initialSettings || []);
     const [hasPendingDeletion, setHasPendingDeletion] = React.useState(false);
     const [activeForm, setActiveForm] = React.useState(0);
     const currentActiveFormData = currentSettings[activeForm];
@@ -253,10 +252,10 @@ export default function Page({
 
     React.useEffect(() => {
         reset({
-            serial: currentActiveFormData.serial,
-            to_email: currentActiveFormData.to_email,
-            to_name: currentActiveFormData.to_name,
-            playlist_id: currentActiveFormData.playlist_id,
+            serial: currentActiveFormData?.serial,
+            to_email: currentActiveFormData?.to_email,
+            to_name: currentActiveFormData?.to_name,
+            playlist_id: currentActiveFormData?.playlist_id,
             send_test_email: false,
         });
     }, [currentActiveFormData]);
@@ -494,7 +493,7 @@ Page.getInitialProps = async ({ req, res }: NextPageContext) => {
     let initialSettings: YouTubeMailSettings[];
     let emailPreviews: {
         [serial: number]: EmailPreview;
-    } = {};
+    };
 
     const playlistsDataRes = await fetchApi('/api/playlists_setup', {
         req,

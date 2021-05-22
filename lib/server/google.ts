@@ -1,4 +1,5 @@
 import { google, Auth, youtube_v3, oauth2_v2 } from 'googleapis';
+import * as Sentry from '@sentry/nextjs';
 import getConfig from 'next/config';
 import getRedis from 'lib/server/redis';
 import crypto from 'crypto';
@@ -272,7 +273,7 @@ async function getUserAuthContext(userId?: string): Promise<AuthContext> {
         return userId;
     }
 
-    const waitQueue: (() => void)[] = [];
+    const waitQueue: [() => void, (err?: unknown) => void][] = [];
 
     const waitForNextTokenRefresh = () => {
         debug('waitForNextTokenRefresh');
@@ -283,8 +284,8 @@ async function getUserAuthContext(userId?: string): Promise<AuthContext> {
                     2000,
                 );
             }),
-            new Promise<void>((resolve) => {
-                waitQueue.push(resolve);
+            new Promise<void>((resolve, reject) => {
+                waitQueue.push([resolve, reject]);
             }),
         ]);
     };
@@ -295,6 +296,18 @@ async function getUserAuthContext(userId?: string): Promise<AuthContext> {
             ...tokens,
             ..._.pickBy(newTokens),
         };
+
+        // FUCK GOOGLE why refresh_token can be missing?
+        // refresh_token must be presented for the token to be valid.
+        if (!tokens.refresh_token) {
+            const err = new GoogleAuthenticationError('missing refresh_token');
+            Sentry.captureException(err);
+            while (waitQueue.length) {
+                waitQueue.pop()[1](err);
+            }
+            throw err;
+        }
+
         // FUCK GOOGLE: getToken() doesn't call setCredentials()
         // FUCK GOOGLE: setCredentials() doesn't emit "token" event
         oauth2Client.setCredentials(tokens);
@@ -303,7 +316,7 @@ async function getUserAuthContext(userId?: string): Promise<AuthContext> {
         }
         await setOAuthCredentialsOfUserId(userId, tokens);
         while (waitQueue.length) {
-            waitQueue.pop()();
+            waitQueue.pop()[0]();
         }
         debug('done receive new tokens');
     });

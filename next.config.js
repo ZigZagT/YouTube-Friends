@@ -9,7 +9,7 @@ module.exports = withSentryConfig(
         serverRuntimeConfig: {
             SENDGRID_TOKEN: process.env.SENDGRID_TOKEN,
             GOOGLE_OAUTH_CLIENT_SECRET: process.env.GOOGLE_OAUTH_CLIENT_SECRET,
-            REDIS_URL: process.env.REDIS_URL || process.env.REDISCLOUD_URL,
+            REDIS_URL: process.env.REDISCLOUD_URL || process.env.REDIS_URL,
             REDIS_PREFIX: process.env.REDIS_PREFIX || '',
             GOOGLE_OAUTH_CLIENT_ID: process.env.GOOGLE_OAUTH_CLIENT_ID,
             GOOGLE_OAUTH_REDIRECT_URL: `${process.env.GOOGLE_OAUTH_REDIRECT_URL_PREFIX}/api/google_oauth/on_redirect`,

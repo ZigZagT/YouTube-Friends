@@ -1,4 +1,5 @@
 import getRedis from 'lib/server/redis';
+import * as Sentry from '@sentry/nextjs';
 import getDebug from 'debug';
 import {
     maintainSavedStates,
@@ -61,7 +62,7 @@ async function start() {
                     keepSessionAlive: true,
                 });
             } else {
-                console.error(e);
+                Sentry.captureException(e);
             }
         }
     }

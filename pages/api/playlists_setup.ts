@@ -55,7 +55,8 @@ export default makeGoogleAuthedApi(async function playlistsSetupApi(
     res: NextApiResponse,
 ) {
     const profile = await getProfile();
-    const currentSettings = await getYouTubeMailSettingsOfUserId(await getUserId());
+    const currentSettings =
+        (await getYouTubeMailSettingsOfUserId(await getUserId())) || [];
 
     if (req.method === 'GET') {
         const emailPreviews = await sendPlaylistEmailUpdate(await getUserId(), {

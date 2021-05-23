@@ -133,14 +133,13 @@ function PlaylistSelect({
 
 const PageStyle = styled.div`
     display: flex;
+    min-width: 712px;
     flex-direction: column;
     label {
         display: flex;
-        margin: 5px;
     }
     input {
         display: flex;
-        margin: 0 5px;
     }
 `;
 
@@ -151,7 +150,12 @@ const HeaderStyle = styled.div`
     height: 30px;
     background-color: #eee;
 
+    @media screen and (max-width: 1200px) {
+        flex-wrap: wrap;
+    }
+
     & > * {
+        margin: 0;
         max-height: 30px;
         margin-left: 10px;
         margin-right: 10px;
@@ -162,6 +166,11 @@ const MainZone = styled.div`
     display: flex;
     width: 100%;
     justify-content: space-between;
+
+    @media screen and (max-width: 1200px) {
+        justify-content: flex-start;
+        flex-direction: column;
+    }
 `;
 
 const SideBarZone = styled.div`
@@ -174,17 +183,40 @@ const SideBarZone = styled.div`
     align-items: center;
     width: 50px;
 
+    @media screen and (max-width: 1200px) {
+        flex-direction: row;
+        flex-wrap: wrap;
+        padding: 0;
+        width: 100%;
+        height: 30px;
+    }
+
     & > * {
         display: flex;
         width: 100%;
         justify-content: center;
+        align-items: center;
         margin-top: 5px;
+
+        @media screen and (max-width: 1200px) {
+            width: 50px;
+            height: 25px;
+            margin-top: 0;
+            margin-left: 5px;
+        }
     }
 `;
 
 const FormZone = styled.div`
     display: flex;
     padding: 0 5px;
+
+    & label {
+        margin: 5px;
+    }
+    & input {
+        margin: 0 5px;
+    }
 `;
 
 const FormActions = styled.div`
@@ -200,17 +232,13 @@ const PreviewZonePlaceholder = styled.div`
     display: flex;
     flex-shrink: 0;
     box-sizing: content-box;
-    border: solid 1px transparent;
-    width: 700px;
+    border: solid 0px transparent;
+    width: 712px;
 `;
 
 const PreviewZoneContent = styled.div`
-    position: fixed;
-    bottom: 0;
-    right: 0;
-    border: solid 1px black;
     width: 700px;
-    height: calc(100vh - 30px - 10px - 2px);
+    border: solid 1px black;
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
@@ -218,6 +246,13 @@ const PreviewZoneContent = styled.div`
     padding: 5px;
     overflow-x: hidden;
     overflow-y: scroll;
+
+    @media screen and (min-width: 1200px) {
+        position: fixed;
+        bottom: 0;
+        right: 0;
+        height: calc(100vh - 30px - 10px - 2px);
+    }
 `;
 
 const PreviewZone = ({ children }) => {
@@ -272,7 +307,6 @@ export default function Page({
     }
 
     async function onSubmit(currentFormSettings) {
-        window.scrollTo(0, 0);
         setProgressText('Setting up... please wait...');
         const newSettings = currentSettings.map((settings) => ({
             ...settings,

@@ -9,10 +9,10 @@
   "license": "MIT",
   "private": false,
   "scripts": {
-    "dev": "env $(cat .env.local) NODE_ENV=development next dev",
+    "dev": "env $(cat .env.local) NODE_ENV=development nodemon -w pages/api -w lib/server -w server.js -e tx,tsx,js,jsx,json -x 'node -r esm' server.js",
     "dev-prod": "yarn build && env $(cat .env.local) yarn start",
     "build": "NODE_ENV=production next build",
-    "start": "NODE_ENV=production next start"
+    "start": "NODE_ENV=production node -r esm server.js"
   },
   "dependencies": {
     "@sentry/nextjs": "^6.4.1",
@@ -24,6 +24,7 @@
     "debug": "^4.3.1",
     "esm": "^3.2.25",
     "express": "^4.17.1",
+    "fetch-ponyfill": "^7.1.0",
     "googleapis": "^73.0.0",
     "ioredis": "^4.27.3",
     "lodash": "^4.17.21",

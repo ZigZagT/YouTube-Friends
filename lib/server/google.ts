@@ -15,7 +15,7 @@ const debug = getDebug('YTF:lib/server/google.ts');
 
 export class GoogleApiError extends Error {}
 
-class GoogleAuthenticationError extends GoogleApiError {}
+export class GoogleAuthenticationError extends GoogleApiError {}
 
 class UserProfileHasIssueError extends GoogleApiError {}
 
@@ -297,15 +297,20 @@ async function getUserAuthContext(userId?: string): Promise<AuthContext> {
             ..._.pickBy(newTokens),
         };
 
-        // FUCK GOOGLE why refresh_token can be missing?
+        // FUCK GOOGLE refresh_token can be missing if this isn't the user's first time auth with us
         // refresh_token must be presented for the token to be valid.
         if (!tokens.refresh_token) {
             const err = new GoogleAuthenticationError('missing refresh_token');
-            Sentry.captureException(err);
+            Sentry.captureException(err, {
+                extra: {
+                    tokens,
+                    newTokens,
+                },
+            });
             while (waitQueue.length) {
                 waitQueue.pop()[1](err);
             }
-            throw err;
+            return;
         }
 
         // FUCK GOOGLE: getToken() doesn't call setCredentials()
@@ -328,6 +333,8 @@ async function getUserAuthContext(userId?: string): Promise<AuthContext> {
                 access_type: 'offline',
                 scope: GOOGLE_OAUTH_SCOPES.join(' '),
                 state,
+                // fix missing refresh_token https://github.com/googleapis/google-api-python-client/issues/213#issuecomment-205886341
+                prompt: 'consent',
             }),
         getProfile,
         getUserId,

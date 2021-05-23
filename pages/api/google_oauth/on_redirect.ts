@@ -4,6 +4,7 @@ import {
     maintainSavedStates,
     processOAuthCode,
     refreshSessionTokenCookie,
+    GoogleAuthenticationError,
 } from 'lib/server/google';
 import getDebug from 'debug';
 const debug = getDebug('YTF:pages/api/google_oauth/on_redirect.ts');
@@ -24,7 +25,20 @@ export default makeApi(async (req, res) => {
     }
 
     const authCode = String(req.query.code);
-    const authContext = await processOAuthCode(authedSessionToken, authCode);
+
+    let authContext;
+    try {
+        authContext = await processOAuthCode(authedSessionToken, authCode);
+    } catch (e) {
+        if (e instanceof GoogleAuthenticationError) {
+            res.statusCode = 400;
+            res.json({
+                status: 'error',
+                message: `authentication failed ${e.message}`,
+            });
+            return;
+        }
+    }
 
     const tokenInfo = await authContext.auth.getTokenInfo(
         authContext.auth.credentials.access_token,

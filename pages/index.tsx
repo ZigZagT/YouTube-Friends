@@ -311,6 +311,7 @@ export default function Page({
         const newSettings = currentSettings.map((settings) => ({
             ...settings,
             lastProcessedPublishDate: undefined,
+            etag: undefined,
         }));
         newSettings[activeForm] = currentFormSettings;
         try {
